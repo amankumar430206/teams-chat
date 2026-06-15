@@ -56,7 +56,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (authAsync.isLoading) return null;
 
       final isAuthenticated =
-          authAsync.valueOrNull?.isAuthenticated ?? false;
+          authAsync.asData?.value.isAuthenticated ?? false;
       final onLoginPage = state.matchedLocation == AppRoutes.login;
 
       if (!isAuthenticated && !onLoginPage) return AppRoutes.login;

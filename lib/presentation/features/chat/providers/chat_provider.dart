@@ -95,7 +95,7 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
     final currentUser = _currentUser;
     if (currentUser == null) return;
 
-    final users = ref.read(homeProvider).valueOrNull?.users ?? [];
+    final users = ref.read(homeProvider).asData?.value?.users ?? [];
 
     // 1. Load message history (local cache → generate mock).
     final history = ref.read(chatRepositoryProvider).getMessageHistory(
@@ -311,7 +311,7 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
   // ---------------------------------------------------------------------------
 
   UserEntity? get _currentUser =>
-      ref.read(authProvider).valueOrNull?.user;
+      ref.read(authProvider).asData?.value?.user;
 
   void _persistCache(List<MessageEntity> messages) {
     ref.read(chatRepositoryProvider).cacheMessages(_roomId, messages);

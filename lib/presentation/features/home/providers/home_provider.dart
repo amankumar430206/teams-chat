@@ -68,7 +68,7 @@ class HomeNotifier extends AsyncNotifier<HomeState> {
   }
 
   void search(String query) {
-    final current = state.valueOrNull;
+    final current = state.asData?.value;
     if (current == null) return;
     state = AsyncValue.data(current.copyWith(searchQuery: query));
   }

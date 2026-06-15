@@ -32,7 +32,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final homeAsync = ref.watch(homeProvider);
-    final authState = ref.watch(authProvider).valueOrNull;
+    final authState = ref.watch(authProvider).asData?.value;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
