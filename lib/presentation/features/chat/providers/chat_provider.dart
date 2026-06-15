@@ -57,35 +57,32 @@ class ChatState {
 }
 
 // ---------------------------------------------------------------------------
-// Provider (family — one instance per roomId)
+// Provider — one StateNotifier instance per roomId
 // ---------------------------------------------------------------------------
 
 final chatProvider =
-    NotifierProvider.family<ChatNotifier, ChatState, String>(
-  ChatNotifier.new,
+    StateNotifierProvider.family<ChatNotifier, ChatState, String>(
+  (ref, roomId) => ChatNotifier(roomId, ref),
 );
 
 // ---------------------------------------------------------------------------
 // Notifier
 // ---------------------------------------------------------------------------
 
-class ChatNotifier extends FamilyNotifier<ChatState, String> {
+class ChatNotifier extends StateNotifier<ChatState> {
+  ChatNotifier(this._roomId, this._ref) : super(const ChatState.initial()) {
+    // Async init kicked off immediately after construction.
+    Future.microtask(_initialize);
+  }
+
   static const _uuid = Uuid();
 
-  String get _roomId => arg;
+  final String _roomId;
+  final Ref _ref;
 
   StreamSubscription<Map<String, dynamic>>? _wsSub;
   Timer? _typingClearTimer;
   Timer? _simulationTimer;
-
-  @override
-  ChatState build(String roomId) {
-    // Set up cleanup when this provider is disposed (on screen pop).
-    ref.onDispose(_dispose);
-    // Kick off async init.
-    Future.microtask(() => _initialize());
-    return const ChatState.initial();
-  }
 
   // ---------------------------------------------------------------------------
   // Init
@@ -95,27 +92,24 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
     final currentUser = _currentUser;
     if (currentUser == null) return;
 
-    final users = ref.read(homeProvider).asData?.value?.users ?? [];
+    final users = _ref.read(homeProvider).asData?.value?.users ?? [];
 
     // 1. Load message history (local cache → generate mock).
-    final history = ref.read(chatRepositoryProvider).getMessageHistory(
+    final history = _ref.read(chatRepositoryProvider).getMessageHistory(
           roomId: _roomId,
           users: users,
           currentUser: currentUser,
         );
 
-    state = state.copyWith(
-      messages: history,
-      isLoadingHistory: false,
-    );
+    state = state.copyWith(messages: history, isLoadingHistory: false);
 
     // 2. Connect WebSocket and start listening.
-    await ref.read(webSocketProvider.notifier).connect();
+    await _ref.read(webSocketProvider.notifier).connect();
     _listenToWebSocket();
 
     state = state.copyWith(isConnected: true);
 
-    // 3. Schedule a simulated "other user" interaction for demo realism.
+    // 3. Schedule simulated other-user activity for demo realism.
     _scheduleSimulation(users, currentUser);
   }
 
@@ -124,11 +118,12 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
   // ---------------------------------------------------------------------------
 
   void _listenToWebSocket() {
-    _wsSub = ref.read(webSocketProvider.notifier).messages.listen((payload) {
+    _wsSub =
+        _ref.read(webSocketProvider.notifier).messages.listen((payload) {
       final type = payload['type'] as String?;
       final roomId = payload['roomId'] as String?;
 
-      // Only process events for this room.
+      // Ignore frames for other rooms.
       if (roomId != _roomId) return;
 
       if (type == 'chat_message') _handleIncomingMessage(payload);
@@ -141,9 +136,8 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
     final currentUser = _currentUser;
     if (currentUser == null || id == null) return;
 
-    // The echo server mirrors back everything we send.
-    // If the message ID is already in our list (as "sent"), just upgrade it
-    // to "delivered" — don't add a duplicate.
+    // Echo server mirrors back our own sends. Detect by ID and upgrade
+    // status to delivered instead of inserting a duplicate.
     final existing = state.messages.indexWhere((m) => m.id == id);
     if (existing != -1) {
       final updated = List<MessageEntity>.from(state.messages);
@@ -154,12 +148,11 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
       return;
     }
 
-    // A genuinely new message from someone else.
+    // Genuinely new message from someone else.
     final msg = MessageModel.fromWsPayload(
       payload,
       currentUserId: currentUser.id,
     );
-
     final updated = [...state.messages, msg];
     state = state.copyWith(messages: updated);
     _persistCache(updated);
@@ -182,7 +175,7 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
   // Public API
   // ---------------------------------------------------------------------------
 
-  /// Sends a message from the current user.
+  /// Sends a message from the current user with optimistic UI.
   Future<void> sendMessage(String content) async {
     final currentUser = _currentUser;
     if (currentUser == null || content.trim().isEmpty) return;
@@ -190,7 +183,7 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
     final id = _uuid.v4();
     final now = DateTime.now();
 
-    // Optimistic UI — show as "sending" immediately.
+    // Show immediately as "sending".
     final msg = MessageModel(
       id: id,
       roomId: _roomId,
@@ -203,11 +196,10 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
       status: MessageStatus.sending,
     );
 
-    final updated = [...state.messages, msg];
-    state = state.copyWith(messages: updated);
+    state = state.copyWith(messages: [...state.messages, msg]);
 
-    // Send over WebSocket.
-    ref.read(webSocketProvider.notifier).send({
+    // Transmit over WebSocket.
+    _ref.read(webSocketProvider.notifier).send({
       'type': 'chat_message',
       'id': id,
       'roomId': _roomId,
@@ -218,21 +210,21 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
       'timestamp': now.toIso8601String(),
     });
 
-    // Mark as "sent" locally even if echo hasn't returned yet.
-    final sentUpdated = List<MessageEntity>.from(state.messages);
-    final idx = sentUpdated.indexWhere((m) => m.id == id);
+    // Upgrade to "sent" locally before the echo arrives.
+    final sentList = List<MessageEntity>.from(state.messages);
+    final idx = sentList.indexWhere((m) => m.id == id);
     if (idx != -1) {
-      sentUpdated[idx] = sentUpdated[idx].copyWith(status: MessageStatus.sent);
-      state = state.copyWith(messages: sentUpdated);
+      sentList[idx] = sentList[idx].copyWith(status: MessageStatus.sent);
+      state = state.copyWith(messages: sentList);
     }
   }
 
-  /// Sends a typing event and auto-clears after the configured timeout.
+  /// Broadcasts a typing event and auto-clears after the configured timeout.
   void onTyping() {
     final currentUser = _currentUser;
     if (currentUser == null) return;
 
-    ref.read(webSocketProvider.notifier).send({
+    _ref.read(webSocketProvider.notifier).send({
       'type': 'typing',
       'roomId': _roomId,
       'senderId': currentUser.id,
@@ -244,7 +236,7 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
     _typingClearTimer = Timer(
       const Duration(seconds: AppConstants.typingClearAfterSeconds),
       () {
-        ref.read(webSocketProvider.notifier).send({
+        _ref.read(webSocketProvider.notifier).send({
           'type': 'typing',
           'roomId': _roomId,
           'senderId': currentUser.id,
@@ -256,7 +248,7 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
   }
 
   // ---------------------------------------------------------------------------
-  // Demo simulation
+  // Demo simulation (typing indicator → reply after a delay)
   // ---------------------------------------------------------------------------
 
   void _scheduleSimulation(List<UserEntity> users, UserEntity me) {
@@ -266,13 +258,13 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
     final rng = Random(_roomId.hashCode.abs());
     final other = others[rng.nextInt(others.length)];
 
-    // Step 1 — show typing indicator after a short delay.
+    // Step 1 — show typing indicator.
     _simulationTimer = Timer(
       const Duration(milliseconds: AppConstants.simulatedTypingDelayMs),
       () {
         state = state.copyWith(typingUsers: [other.firstName]);
 
-        // Step 2 — clear indicator and deliver a message after another 2.5 s.
+        // Step 2 — clear indicator and deliver the simulated message.
         _simulationTimer = Timer(const Duration(milliseconds: 2500), () {
           state = state.copyWith(typingUsers: []);
 
@@ -311,15 +303,17 @@ class ChatNotifier extends FamilyNotifier<ChatState, String> {
   // ---------------------------------------------------------------------------
 
   UserEntity? get _currentUser =>
-      ref.read(authProvider).asData?.value?.user;
+      _ref.read(authProvider).asData?.value?.user;
 
   void _persistCache(List<MessageEntity> messages) {
-    ref.read(chatRepositoryProvider).cacheMessages(_roomId, messages);
+    _ref.read(chatRepositoryProvider).cacheMessages(_roomId, messages);
   }
 
-  void _dispose() {
+  @override
+  void dispose() {
     _wsSub?.cancel();
     _typingClearTimer?.cancel();
     _simulationTimer?.cancel();
+    super.dispose();
   }
 }
