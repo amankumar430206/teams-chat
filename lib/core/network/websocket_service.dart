@@ -42,29 +42,27 @@ class WebSocketState {
 // ---------------------------------------------------------------------------
 
 final webSocketProvider =
-    NotifierProvider<WebSocketNotifier, WebSocketState>(WebSocketNotifier.new);
+    StateNotifierProvider<WebSocketNotifier, WebSocketState>(
+  (_) => WebSocketNotifier(),
+);
 
 // ---------------------------------------------------------------------------
 // Notifier
 // ---------------------------------------------------------------------------
 
-class WebSocketNotifier extends Notifier<WebSocketState> {
+class WebSocketNotifier extends StateNotifier<WebSocketState> {
+  WebSocketNotifier() : super(const WebSocketState(isConnected: false));
+
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
   Timer? _reconnectTimer;
 
-  // Broadcast stream so multiple listeners (e.g. different rooms) can subscribe.
+  // Broadcast stream so multiple rooms can subscribe simultaneously.
   final _messageController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  /// Incoming decoded WebSocket messages.
+  /// Decoded incoming WebSocket frames.
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
-
-  @override
-  WebSocketState build() {
-    ref.onDispose(_dispose);
-    return const WebSocketState(isConnected: false);
-  }
 
   // ---------------------------------------------------------------------------
   // Public API
@@ -102,7 +100,7 @@ class WebSocketNotifier extends Notifier<WebSocketState> {
     }
   }
 
-  /// Sends a pre-built map as a JSON string over the socket.
+  /// Serialises [payload] to JSON and sends it over the socket.
   void send(Map<String, dynamic> payload) {
     if (!state.isConnected) return;
     try {
@@ -127,7 +125,7 @@ class WebSocketNotifier extends Notifier<WebSocketState> {
       final data = jsonDecode(raw as String) as Map<String, dynamic>;
       _messageController.add(data);
     } catch (_) {
-      // Ignore malformed frames
+      // Ignore malformed frames.
     }
   }
 
@@ -150,10 +148,12 @@ class WebSocketNotifier extends Notifier<WebSocketState> {
     );
   }
 
-  void _dispose() {
+  @override
+  void dispose() {
     _reconnectTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
     _messageController.close();
+    super.dispose();
   }
 }

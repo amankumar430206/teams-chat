@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:teams_chat/core/errors/app_exception.dart';
 import 'package:teams_chat/data/repositories/auth_repository.dart';
@@ -12,26 +14,31 @@ class AuthState {
     required this.isAuthenticated,
     this.user,
     this.error,
+    this.isLoading = false,
   });
 
   const AuthState.initial()
       : isAuthenticated = false,
         user = null,
-        error = null;
+        error = null,
+        isLoading = false;
 
   final bool isAuthenticated;
   final UserEntity? user;
   final String? error;
+  final bool isLoading;
 
   AuthState copyWith({
     bool? isAuthenticated,
     UserEntity? user,
     String? error,
+    bool? isLoading,
   }) =>
       AuthState(
         isAuthenticated: isAuthenticated ?? this.isAuthenticated,
         user: user ?? this.user,
         error: error,
+        isLoading: isLoading ?? this.isLoading,
       );
 }
 
@@ -40,49 +47,47 @@ class AuthState {
 // ---------------------------------------------------------------------------
 
 final authProvider =
-    AsyncNotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
+    StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+  return AuthNotifier(ref.read(authRepositoryProvider));
+});
 
 // ---------------------------------------------------------------------------
 // Notifier
 // ---------------------------------------------------------------------------
 
-class AuthNotifier extends AsyncNotifier<AuthState> {
-  @override
-  Future<AuthState> build() async {
-    final repo = ref.read(authRepositoryProvider);
-    if (!repo.isLoggedIn) return const AuthState.initial();
+class AuthNotifier extends StateNotifier<AuthState> {
+  AuthNotifier(this._repo) : super(const AuthState.initial()) {
+    // Restore session from SharedPreferences on cold start.
+    _restoreSession();
+  }
 
-    final user = repo.getStoredUser();
-    if (user == null) return const AuthState.initial();
+  final AuthRepository _repo;
 
-    return AuthState(isAuthenticated: true, user: user);
+  void _restoreSession() {
+    if (!_repo.isLoggedIn) return;
+    final user = _repo.getStoredUser();
+    if (user != null) {
+      state = AuthState(isAuthenticated: true, user: user);
+    }
   }
 
   Future<void> login({
     required String username,
     required String password,
   }) async {
-    state = const AsyncValue.loading();
+    state = state.copyWith(isLoading: true, error: null);
     try {
-      final user = await ref
-          .read(authRepositoryProvider)
-          .login(username: username, password: password);
-      state = AsyncValue.data(
-        AuthState(isAuthenticated: true, user: user),
-      );
+      final user = await _repo.login(username: username, password: password);
+      state = AuthState(isAuthenticated: true, user: user);
     } on AppException catch (e) {
-      state = AsyncValue.data(
-        AuthState(isAuthenticated: false, error: e.message),
-      );
-    } catch (e) {
-      state = AsyncValue.data(
-        AuthState(isAuthenticated: false, error: 'Login failed'),
-      );
+      state = AuthState(isAuthenticated: false, error: e.message);
+    } catch (_) {
+      state = const AuthState(isAuthenticated: false, error: 'Login failed');
     }
   }
 
   Future<void> logout() async {
-    await ref.read(authRepositoryProvider).logout();
-    state = const AsyncValue.data(AuthState.initial());
+    await _repo.logout();
+    state = const AuthState.initial();
   }
 }

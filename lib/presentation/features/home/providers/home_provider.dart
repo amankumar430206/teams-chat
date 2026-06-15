@@ -12,16 +12,22 @@ class HomeState {
     required this.rooms,
     required this.users,
     this.searchQuery = '',
+    this.isLoading = false,
+    this.error,
   });
 
   const HomeState.initial()
       : rooms = const [],
         users = const [],
-        searchQuery = '';
+        searchQuery = '',
+        isLoading = true,
+        error = null;
 
   final List<ChatRoomEntity> rooms;
   final List<UserEntity> users;
   final String searchQuery;
+  final bool isLoading;
+  final String? error;
 
   List<UserEntity> get onlineUsers =>
       users.where((u) => u.isOnline).toList();
@@ -30,20 +36,22 @@ class HomeState {
   List<ChatRoomEntity> get filteredRooms {
     if (searchQuery.isEmpty) return rooms;
     final q = searchQuery.toLowerCase();
-    return rooms
-        .where((r) => r.name.toLowerCase().contains(q))
-        .toList();
+    return rooms.where((r) => r.name.toLowerCase().contains(q)).toList();
   }
 
   HomeState copyWith({
     List<ChatRoomEntity>? rooms,
     List<UserEntity>? users,
     String? searchQuery,
+    bool? isLoading,
+    String? error,
   }) =>
       HomeState(
         rooms: rooms ?? this.rooms,
         users: users ?? this.users,
         searchQuery: searchQuery ?? this.searchQuery,
+        isLoading: isLoading ?? this.isLoading,
+        error: error,
       );
 }
 
@@ -52,34 +60,35 @@ class HomeState {
 // ---------------------------------------------------------------------------
 
 final homeProvider =
-    AsyncNotifierProvider<HomeNotifier, HomeState>(HomeNotifier.new);
+    StateNotifierProvider<HomeNotifier, HomeState>((ref) {
+  return HomeNotifier(ref.read(chatRepositoryProvider));
+});
 
 // ---------------------------------------------------------------------------
 // Notifier
 // ---------------------------------------------------------------------------
 
-class HomeNotifier extends AsyncNotifier<HomeState> {
-  @override
-  Future<HomeState> build() async {
-    final repo = ref.read(chatRepositoryProvider);
-    final users = await repo.fetchUsers();
-    final rooms = repo.buildRooms(users);
-    return HomeState(rooms: rooms, users: users);
+class HomeNotifier extends StateNotifier<HomeState> {
+  HomeNotifier(this._repo) : super(const HomeState.initial()) {
+    _load();
+  }
+
+  final ChatRepository _repo;
+
+  Future<void> _load() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final users = await _repo.fetchUsers();
+      final rooms = _repo.buildRooms(users);
+      state = HomeState(rooms: rooms, users: users);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
   }
 
   void search(String query) {
-    final current = state.asData?.value;
-    if (current == null) return;
-    state = AsyncValue.data(current.copyWith(searchQuery: query));
+    state = state.copyWith(searchQuery: query);
   }
 
-  Future<void> refresh() async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      final repo = ref.read(chatRepositoryProvider);
-      final users = await repo.fetchUsers();
-      final rooms = repo.buildRooms(users);
-      return HomeState(rooms: rooms, users: users);
-    });
-  }
+  Future<void> refresh() => _load();
 }

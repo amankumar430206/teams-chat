@@ -38,7 +38,7 @@ class _LoginFormWidgetState extends ConsumerState<LoginFormWidget> {
 
     // Show error if login failed (auth guard handles navigation on success).
     if (mounted) {
-      final error = ref.read(authProvider).asData?.value.error;
+      final error = ref.read(authProvider).error;
       if (error != null) showErrorSnackBar(context, error);
     }
   }

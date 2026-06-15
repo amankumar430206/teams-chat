@@ -92,7 +92,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final currentUser = _currentUser;
     if (currentUser == null) return;
 
-    final users = _ref.read(homeProvider).asData?.value?.users ?? [];
+    final users = _ref.read(homeProvider).users;
 
     // 1. Load message history (local cache → generate mock).
     final history = _ref.read(chatRepositoryProvider).getMessageHistory(
@@ -303,7 +303,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // ---------------------------------------------------------------------------
 
   UserEntity? get _currentUser =>
-      _ref.read(authProvider).asData?.value?.user;
+      _ref.read(authProvider).user;
 
   void _persistCache(List<MessageEntity> messages) {
     _ref.read(chatRepositoryProvider).cacheMessages(_roomId, messages);

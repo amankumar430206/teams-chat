@@ -24,11 +24,11 @@ abstract class AppRoutes {
 // ---------------------------------------------------------------------------
 
 class _RouterRefreshNotifier extends ChangeNotifier {
-  _RouterRefreshNotifier(Stream<AsyncValue<AuthState>> stream) {
+  _RouterRefreshNotifier(Stream<AuthState> stream) {
     _sub = stream.listen((_) => notifyListeners());
   }
 
-  late final dynamic _sub; // StreamSubscription<AsyncValue<AuthState>>
+  late final dynamic _sub; // StreamSubscription<AuthState>
 
   @override
   void dispose() {
@@ -50,17 +50,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: AppRoutes.login,
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
-      final authAsync = ref.read(authProvider);
+      final authState = ref.read(authProvider);
 
-      // While loading the stored session, don't redirect.
-      if (authAsync.isLoading) return null;
+      // Don't redirect while restoring the session.
+      if (authState.isLoading) return null;
 
-      final isAuthenticated =
-          authAsync.asData?.value.isAuthenticated ?? false;
+      final isAuthenticated = authState.isAuthenticated;
       final onLoginPage = state.matchedLocation == AppRoutes.login;
 
       if (!isAuthenticated && !onLoginPage) return AppRoutes.login;
-      if (isAuthenticated && onLoginPage) return AppRoutes.home;
+      if (isAuthenticated  && onLoginPage) return AppRoutes.home;
       return null;
     },
     routes: [

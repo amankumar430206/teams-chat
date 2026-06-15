@@ -9,15 +9,19 @@ import 'package:teams_chat/data/datasources/local/local_storage.dart';
 // Theme mode provider — persisted in SharedPreferences
 // ---------------------------------------------------------------------------
 
-final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
-  ThemeModeNotifier.new,
-);
+final themeModeProvider =
+    StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
+  final prefs = ref.read(sharedPreferencesProvider);
+  return ThemeModeNotifier(prefs);
+});
 
-class ThemeModeNotifier extends Notifier<ThemeMode> {
-  @override
-  ThemeMode build() {
-    // Read persisted value synchronously from the pre-loaded SharedPreferences
-    final prefs = ref.read(sharedPreferencesProvider);
+class ThemeModeNotifier extends StateNotifier<ThemeMode> {
+  ThemeModeNotifier(this._prefs) : super(_loadInitial(_prefs));
+
+  final SharedPreferences _prefs;
+
+  // Reads the persisted value once at construction time.
+  static ThemeMode _loadInitial(SharedPreferences prefs) {
     final saved = prefs.getString(StorageKeys.themeMode);
     if (saved == 'dark') return ThemeMode.dark;
     if (saved == 'light') return ThemeMode.light;
@@ -27,10 +31,10 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
   void toggle() {
     final next = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     state = next;
-    ref.read(sharedPreferencesProvider).setString(
-          StorageKeys.themeMode,
-          next == ThemeMode.dark ? 'dark' : 'light',
-        );
+    _prefs.setString(
+      StorageKeys.themeMode,
+      next == ThemeMode.dark ? 'dark' : 'light',
+    );
   }
 }
 

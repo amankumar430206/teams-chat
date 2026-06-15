@@ -31,19 +31,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final homeAsync = ref.watch(homeProvider);
-    final authState = ref.watch(authProvider).asData?.value;
+    final home = ref.watch(homeProvider);
+    final authState = ref.watch(authProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: SafeArea(
-        child: homeAsync.when(
-          loading: () => const AppLoading(message: 'Loading chats…'),
-          error: (e, _) => AppErrorView(
-            message: e.toString(),
-            onRetry: () => ref.read(homeProvider.notifier).refresh(),
-          ),
-          data: (home) => RefreshIndicator(
+        child: home.isLoading
+            ? const AppLoading(message: 'Loading chats…')
+            : home.error != null
+                ? AppErrorView(
+                    message: home.error!,
+                    onRetry: () => ref.read(homeProvider.notifier).refresh(),
+                  )
+                : RefreshIndicator(
             onRefresh: () => ref.read(homeProvider.notifier).refresh(),
             color: AppColors.primary,
             child: CustomScrollView(
@@ -51,9 +52,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 // ── Header ──────────────────────────────────────────
                 SliverToBoxAdapter(
                   child: _Header(
-                    userName: authState?.user?.firstName ?? 'You',
-                    avatarUrl: authState?.user?.avatar,
-                    userFullName: authState?.user?.fullName ?? '',
+                    userName: authState.user?.firstName ?? 'You',
+                    avatarUrl: authState.user?.avatar,
+                    userFullName: authState.user?.fullName ?? '',
                     isDark: isDark,
                   ),
                 ),
@@ -139,7 +140,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 }
