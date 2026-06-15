@@ -24,17 +24,7 @@ abstract class AppRoutes {
 // ---------------------------------------------------------------------------
 
 class _RouterRefreshNotifier extends ChangeNotifier {
-  _RouterRefreshNotifier(Stream<AuthState> stream) {
-    _sub = stream.listen((_) => notifyListeners());
-  }
-
-  late final dynamic _sub; // StreamSubscription<AuthState>
-
-  @override
-  void dispose() {
-    (_sub as dynamic).cancel();
-    super.dispose();
-  }
+  void notify() => notifyListeners();
 }
 
 // ---------------------------------------------------------------------------
@@ -42,9 +32,10 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 // ---------------------------------------------------------------------------
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final refreshNotifier = _RouterRefreshNotifier(
-    ref.watch(authProvider.stream),
-  );
+  final refreshNotifier = _RouterRefreshNotifier();
+
+  // Listen to auth state changes and trigger router re-evaluation.
+  ref.listen<AuthState>(authProvider, (_, __) => refreshNotifier.notify());
 
   final router = GoRouter(
     initialLocation: AppRoutes.login,
